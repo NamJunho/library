@@ -1,0 +1,77 @@
+<script>
+
+function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = (textarea.scrollHeight) + 'px';
+}
+
+document.getElementById('result').addEventListener('input', function() {
+    autoResize(this);
+});
+
+window.addEventListener('resize', function() {
+    autoResize(document.getElementById('result'));
+});
+
+document.getElementById("generate-button").addEventListener("click", function(e) {
+    e.preventDefault();
+    
+    var generateButton = document.getElementById("generate-button");
+    
+    if (generateButton.disabled) return;
+    
+    generateButton.disabled = true;
+    
+    var topic = document.getElementById('topic').value;
+    var loading = document.getElementById('loading');
+    var result = document.getElementById('result');
+    var resultContainer = document.getElementById('result-container');
+    
+    loading.style.display = 'block';
+    resultContainer.style.display = 'none';
+    
+    var formData = new FormData();
+    formData.append('action', 'openai_generate_text');
+    formData.append('topic', topic);
+
+    fetch('/wp-admin/admin-ajax.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        loading.style.display = 'none';
+        if (data.success) {
+            result.value = data.data.choices[0].message.content;
+            resultContainer.style.display = 'block';
+            setTimeout(() => autoResize(result), 0);
+        } else {
+            result.value = '오류가 발생했습니다: ' + data.data;
+            resultContainer.style.display = 'block';
+            setTimeout(() => autoResize(result), 0);
+        }
+        generateButton.disabled = false;
+    })
+    .catch(error => {
+        loading.style.display = 'none';
+        result.value = '오류가 발생했습니다: ' + error.message;
+        resultContainer.style.display = 'block';
+        setTimeout(() => autoResize(result), 0);
+        generateButton.disabled = false;
+    });
+});
+
+document.getElementById("copy-button").addEventListener("click", function() {
+    var result = document.getElementById('result');
+    var copyFeedback = document.querySelector('.copy-feedback');
+    
+    result.select();
+    document.execCommand('copy');
+    
+    copyFeedback.style.display = 'block';
+    setTimeout(() => {
+        copyFeedback.style.display = 'none';
+    }, 2000);
+});
+
+</script>

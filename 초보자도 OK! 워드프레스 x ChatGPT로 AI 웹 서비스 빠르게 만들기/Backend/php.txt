@@ -1,0 +1,61 @@
+function openai_generate_text() {
+	
+    $topic = isset($_POST['topic']) ? sanitize_text_field($_POST['topic']) : '';
+    $prompt = "As an expert in writing a short storyline, your primary task is to generate a short story for the following topic: " . $topic . " in Korean.";
+
+    // OpenAI API URL과 키
+    $api_url = 'https://api.openai.com/v1/chat/completions';
+    $api_key = 'sk-...';  // 실제 OpenAI API 키로 교체하세요.
+    
+    // OpenAI API를 위한 헤더
+    $headers = [
+        'Content-Type' => 'application/json',
+        'Authorization' => 'Bearer ' . $api_key
+    ];
+    
+    // OpenAI API를 위한 본문
+    $body = [
+        'model' => 'gpt-4o-mini',  // 모델 이름이 정확한지 확인하세요.
+        'messages' => [
+            [
+                'role' => 'user',
+                'content' => $prompt
+            ]
+        ],
+        'temperature' => 0.7
+    ];
+    
+    // WordPress HTTP API를 위한 인수
+    $args = [
+        'method'    => 'POST',
+        'headers'   => $headers,
+        'body'      => json_encode($body),
+        'timeout'   => 120
+    ];
+    
+    // 요청을 보냅니다.
+    $response = wp_remote_request($api_url, $args);
+    
+    // 응답을 처리합니다.
+    if (is_wp_error($response)) {
+        $error_message = $response->get_error_message();
+        wp_send_json_error("문제가 발생했습니다: $error_message");
+    } else {
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            wp_send_json_error('API 응답의 JSON이 유효하지 않습니다.');
+        } elseif (!isset($data['choices'])) {
+            wp_send_json_error('API 요청이 실패했습니다. 응답: ' . $body);
+        } else {
+            wp_send_json_success($data);
+        }
+    }
+    
+    // AJAX 콘텐츠를 에코하는 함수에서는 항상 종료합니다.
+    wp_die();
+}
+
+add_action('wp_ajax_openai_generate_text', 'openai_generate_text');
+add_action('wp_ajax_nopriv_openai_generate_text', 'openai_generate_text');
