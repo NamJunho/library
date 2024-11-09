@@ -1,0 +1,9 @@
+// 사용자 ID와 잔액을 사용자 로그인 상태일 때만 가져옴
+$points_required = 5;
+$user_id = get_current_user_id();
+$balance = mycred_get_users_balance($user_id);
+// 사용자의 잔액이 요구 조건을 충족하는지 확인
+if ($balance < $points_required)
+  {
+   return;
+   }

@@ -1,0 +1,1 @@
+mycred_subtract("AI 스토리 생성 도구", $user_id, $points_required, '도구 사용 크레딧 차감', time());
