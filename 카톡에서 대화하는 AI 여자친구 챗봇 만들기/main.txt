@@ -1,0 +1,130 @@
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
+from typing import Optional
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
+import requests
+from datetime import datetime
+from system_prompt import SYSTEM_PROMPT  # 시스템 프롬프트 가져오기
+
+load_dotenv()
+
+# FastAPI 앱 초기화
+app = FastAPI()
+
+client = OpenAI()
+
+# 사용자 세션을 저장할 딕셔너리
+user_sessions = {}
+
+def get_gpt_response(messages):
+    """ GPT 모델을 사용하여 대화 기록에 기반한 응답을 생성하는 함수 """
+    completion = client.chat.completions.create(
+        model=os.getenv("OPENAI_GPT_4o_MINI"),
+        messages=messages
+    )
+    return completion.choices[0].message.content
+
+def get_or_create_session(user_id):
+    """ 사용자의 세션을 가져오거나 새로 생성하는 함수 """
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {
+            'messages': [{"role": "system", "content": SYSTEM_PROMPT}]
+        }
+    return user_sessions[user_id]
+
+def process_user_input(callback_url: str, user_id: str, user_input: str):
+    """ 사용자 입력을 처리하고 결과를 콜백 URL로 전송하는 함수 """
+    try:
+        session = get_or_create_session(user_id)
+        session['messages'].append({"role": "user", "content": user_input})
+        
+        gpt_response = get_gpt_response(session['messages'])
+        session['messages'].append({"role": "assistant", "content": gpt_response})
+        
+        res = {
+            "version": "2.0",
+            "template": {
+                "outputs": [
+                    {
+                        "simpleText": {
+                            "text": gpt_response
+                        }
+                    }
+                ]
+            }
+        }
+
+        # 콜백 URL로 결과를 전송
+        requests.post(callback_url, json=res)
+
+    except Exception:
+        error_res = {
+            "version": "2.0",
+            "template": {
+                "outputs": [
+                    {
+                        "simpleText": {
+                            "text": "죄송합니다. 처리 중 오류가 발생했습니다. 다시 시도해 주세요."
+                        }
+                    }
+                ]
+            }
+        }
+        requests.post(callback_url, json=error_res)
+
+def reset_session(user_id):
+    """사용자의 세션을 초기화하는 함수"""
+    user_sessions[user_id] = {
+        'messages': [{"role": "system", "content": SYSTEM_PROMPT}]
+    }
+    return "대화 기록이 초기화되었습니다. 새로운 대화를 시작합니다."
+
+@app.post("/chat/reset")
+async def reset_chat_session(request: Request):
+    try:
+        req = await request.json()
+        user_id = req['userRequest']['user']['id']
+
+        if user_id not in user_sessions:
+            message = "초기화할 대화 기록이 없습니다. 새로운 대화를 시작합니다."
+        else:
+            message = reset_session(user_id)
+
+        res = {
+            "version": "2.0",
+            "template": {
+                "outputs": [
+                    {
+                        "simpleText": {
+                            "text": message
+                        }
+                    }
+                ]
+            }
+        }
+
+        return JSONResponse(content=res)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@app.post("/chat")
+async def chat_response(request: Request, background_tasks: BackgroundTasks):
+    req = await request.json()
+    user_input = req['userRequest']['utterance']
+    user_id = req['userRequest']['user']['id']
+    callback_url = req['userRequest']['callbackUrl']
+
+    # 비동기 작업을 백그라운드에서 실행
+    background_tasks.add_task(process_user_input, callback_url, user_id, user_input)
+
+    # 초기 응답을 보내지 않고 바로 비동기 처리를 시작
+    return JSONResponse(content={
+        "version": "2.0",
+        "useCallback": True
+    })
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
